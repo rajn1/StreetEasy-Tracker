@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>NYC Apartment Hunt</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">NYC Apartment Hunt</p>
+          <h1>Commute-first apartment tracker</h1>
+        </div>
+        <div class="status-pill" id="apiStatus">Manual mode</div>
+      </header>
+
+      <nav class="tabs" aria-label="Apartment hunting tools">
+        <button class="tab-button active" type="button" data-tab="commute">Commute Check</button>
+        <button class="tab-button" type="button" data-tab="deal-score">Deal Score</button>
+      </nav>
+
+      <main>
+        <section class="tab-panel active" id="commute" aria-labelledby="commute-tab">
+          <div class="workspace">
+            <aside class="control-panel">
+              <section class="panel-section">
+                <div class="section-heading">
+                  <h2>Google Maps</h2>
+                </div>
+                <p class="hint" id="apiHint">Add a local config file to enable real commute times.</p>
+              </section>
+
+              <section class="panel-section">
+                <h2>Rush Hour</h2>
+                <div class="field-grid two">
+                  <label>
+                    Weekday
+                    <select id="weekday">
+                      <option value="1">Monday</option>
+                      <option value="2">Tuesday</option>
+                      <option value="3">Wednesday</option>
+                      <option value="4">Thursday</option>
+                      <option value="5">Friday</option>
+                    </select>
+                  </label>
+                  <label>
+                    Depart
+                    <input id="departTime" type="time" value="08:30">
+                  </label>
+                </div>
+                <label>
+                  Travel mode
+                  <select id="travelMode">
+                    <option value="TRANSIT">Transit</option>
+                    <option value="DRIVING">Driving</option>
+                    <option value="WALKING">Walking</option>
+                    <option value="BICYCLING">Bicycling</option>
+                  </select>
+                </label>
+              </section>
+
+              <section class="panel-section">
+                <div class="section-heading">
+                  <h2>Destinations</h2>
+                  <button type="button" id="addDestination">Add</button>
+                </div>
+                <div class="stack" id="destinations"></div>
+              </section>
+
+              <section class="panel-section">
+                <div class="section-heading">
+                  <h2>Apartments</h2>
+                  <button type="button" id="addApartment">Add</button>
+                </div>
+                <div class="link-intake">
+                  <label for="streetEasyUrl">StreetEasy link</label>
+                  <div class="inline-row">
+                    <input id="streetEasyUrl" type="url" placeholder="Paste listing link">
+                    <button type="button" id="inferStreetEasy">Infer</button>
+                  </div>
+                  <div class="confirmation-card" id="streetEasyConfirm" hidden>
+                    <label>
+                      Confirm address
+                      <input id="inferredAddress" placeholder="Apartment address">
+                    </label>
+                    <label>
+                      Listing name
+                      <input id="inferredName" placeholder="Listing name">
+                    </label>
+                    <p class="hint" id="inferHint">Review the guess before adding it to commute checks.</p>
+                    <button class="primary" type="button" id="confirmStreetEasy">Add & Check Commute</button>
+                  </div>
+                </div>
+                <div class="stack" id="apartments"></div>
+              </section>
+            </aside>
+
+            <section class="results-panel">
+              <div class="results-header">
+                <div>
+                  <h2>Ranked Matches</h2>
+                  <p id="resultsMeta">Sorted by weighted commute time.</p>
+                </div>
+                <button class="primary" type="button" id="rankApartments">Rank Apartments</button>
+              </div>
+
+              <div class="score-strip">
+                <div>
+                  <span id="bestTime">--</span>
+                  <small>best commute</small>
+                </div>
+                <div>
+                  <span id="apartmentCount">0</span>
+                  <small>apartments</small>
+                </div>
+                <div>
+                  <span id="destinationCount">0</span>
+                  <small>destinations</small>
+                </div>
+              </div>
+
+              <div class="result-list" id="results"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="tab-panel empty-panel" id="deal-score">
+          <h2>Deal Score</h2>
+          <p>Compare rent against neighborhood, beds/baths, sqft, days on market, fee status, commute time, and amenities. Output a simple score so you can triage fast.</p>
+        </section>
+      </main>
+    </div>
+
+    <template id="destinationTemplate">
+      <article class="mini-card destination-card">
+        <div class="card-row">
+          <input class="destination-name" aria-label="Destination name" placeholder="Work">
+          <input class="destination-weight" aria-label="Destination weight" type="number" min="1" max="5" step="1" value="3" title="Weight">
+          <button class="icon-button remove-card" type="button" title="Remove" aria-label="Remove">×</button>
+        </div>
+        <input class="destination-address" aria-label="Destination address" placeholder="Destination address">
+      </article>
+    </template>
+
+    <template id="apartmentTemplate">
+      <article class="mini-card apartment-card">
+        <div class="card-row">
+          <input class="apartment-name" aria-label="Apartment name" placeholder="Short name">
+          <input class="apartment-price" aria-label="Monthly rent" type="number" min="0" step="50" placeholder="Rent">
+          <button class="icon-button remove-card" type="button" title="Remove" aria-label="Remove">×</button>
+        </div>
+        <input class="apartment-address" aria-label="Apartment address" placeholder="Apartment address">
+        <input class="apartment-url" aria-label="Listing link" type="url" placeholder="Listing link">
+        <input class="apartment-manual" aria-label="Manual commute minutes" type="number" min="0" step="1" placeholder="Manual commute minutes">
+      </article>
+    </template>
+
+    <script src="config.local.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

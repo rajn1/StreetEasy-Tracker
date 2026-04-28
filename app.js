@@ -1,0 +1,547 @@
+const STORAGE_KEY = "nyc-apartment-hunt-v1";
+const LOCAL_CONFIG = window.APARTMENT_HUNT_CONFIG || {};
+
+const state = {
+  apiKey: LOCAL_CONFIG.googleMapsApiKey || "",
+  mapsLoadedFor: "",
+  destinations: [
+    {
+      id: crypto.randomUUID(),
+      name: "Office",
+      address: "11 Madison Ave, New York, NY",
+      weight: 5
+    },
+    {
+      id: crypto.randomUUID(),
+      name: "Gym",
+      address: "Union Square, New York, NY",
+      weight: 2
+    }
+  ],
+  apartments: [
+    {
+      id: crypto.randomUUID(),
+      name: "Sample East Village",
+      address: "100 Avenue A, New York, NY",
+      price: 4200,
+      url: "https://streeteasy.com/",
+      manualMinutes: 24
+    },
+    {
+      id: crypto.randomUUID(),
+      name: "Sample Prospect Heights",
+      address: "550 Vanderbilt Ave, Brooklyn, NY",
+      price: 3900,
+      url: "https://streeteasy.com/",
+      manualMinutes: 38
+    }
+  ],
+  options: {
+    weekday: "2",
+    departTime: "08:30",
+    travelMode: "TRANSIT"
+  }
+};
+
+const els = {
+  apiStatus: document.querySelector("#apiStatus"),
+  apiHint: document.querySelector("#apiHint"),
+  weekday: document.querySelector("#weekday"),
+  departTime: document.querySelector("#departTime"),
+  travelMode: document.querySelector("#travelMode"),
+  streetEasyUrl: document.querySelector("#streetEasyUrl"),
+  streetEasyConfirm: document.querySelector("#streetEasyConfirm"),
+  inferredAddress: document.querySelector("#inferredAddress"),
+  inferredName: document.querySelector("#inferredName"),
+  inferHint: document.querySelector("#inferHint"),
+  destinations: document.querySelector("#destinations"),
+  apartments: document.querySelector("#apartments"),
+  results: document.querySelector("#results"),
+  resultsMeta: document.querySelector("#resultsMeta"),
+  bestTime: document.querySelector("#bestTime"),
+  apartmentCount: document.querySelector("#apartmentCount"),
+  destinationCount: document.querySelector("#destinationCount")
+};
+
+function loadState() {
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if (!saved) return;
+
+  try {
+    const parsed = JSON.parse(saved);
+    state.destinations = parsed.destinations?.length ? parsed.destinations : state.destinations;
+    state.apartments = parsed.apartments?.length ? parsed.apartments : state.apartments;
+    state.options = { ...state.options, ...parsed.options };
+  } catch {
+    localStorage.removeItem(STORAGE_KEY);
+  }
+}
+
+function saveState() {
+  localStorage.setItem(
+    STORAGE_KEY,
+    JSON.stringify({
+      destinations: state.destinations,
+      apartments: state.apartments,
+      options: state.options
+    })
+  );
+}
+
+function updateApiStatus() {
+  const hasKey = Boolean(state.apiKey.trim());
+  els.apiStatus.textContent = hasKey ? "Google Maps ready" : "Manual mode";
+  els.apiStatus.classList.toggle("ready", hasKey);
+  els.apiHint.textContent = hasKey
+    ? "Using your local Google Maps key from config.local.js."
+    : "Create config.local.js from config.local.example.js to enable real commute times.";
+}
+
+function nextRushHourDate() {
+  const targetDay = Number(state.options.weekday);
+  const [hour, minute] = state.options.departTime.split(":").map(Number);
+  const date = new Date();
+  date.setHours(hour, minute, 0, 0);
+
+  const today = date.getDay();
+  let daysAhead = (targetDay - today + 7) % 7;
+  if (daysAhead === 0 && date <= new Date()) daysAhead = 7;
+  date.setDate(date.getDate() + daysAhead);
+  return date;
+}
+
+function renderCards() {
+  els.weekday.value = state.options.weekday;
+  els.departTime.value = state.options.departTime;
+  els.travelMode.value = state.options.travelMode;
+
+  els.destinations.innerHTML = "";
+  state.destinations.forEach((destination) => {
+    const node = document.querySelector("#destinationTemplate").content.cloneNode(true);
+    const card = node.querySelector(".destination-card");
+    card.dataset.id = destination.id;
+    node.querySelector(".destination-name").value = destination.name;
+    node.querySelector(".destination-address").value = destination.address;
+    node.querySelector(".destination-weight").value = destination.weight;
+    els.destinations.append(node);
+  });
+
+  els.apartments.innerHTML = "";
+  state.apartments.forEach((apartment) => {
+    const node = document.querySelector("#apartmentTemplate").content.cloneNode(true);
+    const card = node.querySelector(".apartment-card");
+    card.dataset.id = apartment.id;
+    node.querySelector(".apartment-name").value = apartment.name;
+    node.querySelector(".apartment-address").value = apartment.address;
+    node.querySelector(".apartment-price").value = apartment.price || "";
+    node.querySelector(".apartment-url").value = apartment.url;
+    node.querySelector(".apartment-manual").value = apartment.manualMinutes || "";
+    els.apartments.append(node);
+  });
+
+  updateCounts();
+}
+
+function updateCounts() {
+  els.apartmentCount.textContent = state.apartments.length;
+  els.destinationCount.textContent = state.destinations.length;
+}
+
+function syncFromDom() {
+  state.options.weekday = els.weekday.value;
+  state.options.departTime = els.departTime.value;
+  state.options.travelMode = els.travelMode.value;
+
+  state.destinations = [...els.destinations.querySelectorAll(".destination-card")].map((card) => ({
+    id: card.dataset.id,
+    name: card.querySelector(".destination-name").value.trim(),
+    address: card.querySelector(".destination-address").value.trim(),
+    weight: Math.max(1, Number(card.querySelector(".destination-weight").value) || 1)
+  }));
+
+  state.apartments = [...els.apartments.querySelectorAll(".apartment-card")].map((card) => ({
+    id: card.dataset.id,
+    name: card.querySelector(".apartment-name").value.trim(),
+    address: card.querySelector(".apartment-address").value.trim(),
+    price: Number(card.querySelector(".apartment-price").value) || 0,
+    url: card.querySelector(".apartment-url").value.trim(),
+    manualMinutes: Number(card.querySelector(".apartment-manual").value) || 0
+  }));
+
+  saveState();
+  updateCounts();
+}
+
+function addDestination() {
+  syncFromDom();
+  state.destinations.push({
+    id: crypto.randomUUID(),
+    name: "",
+    address: "",
+    weight: 3
+  });
+  saveState();
+  renderCards();
+}
+
+function addApartment() {
+  syncFromDom();
+  state.apartments.push({
+    id: crypto.randomUUID(),
+    name: "",
+    address: "",
+    price: 0,
+    url: "",
+    manualMinutes: 0
+  });
+  saveState();
+  renderCards();
+}
+
+function inferStreetEasyListing() {
+  const url = els.streetEasyUrl.value.trim();
+  const inference = parseStreetEasyUrl(url);
+  els.streetEasyConfirm.hidden = false;
+  els.inferredAddress.value = inference.address;
+  els.inferredName.value = inference.name;
+  els.inferHint.textContent = inference.message;
+  els.inferHint.classList.toggle("warning", !inference.confident);
+}
+
+async function confirmStreetEasyListing() {
+  syncFromDom();
+  const address = els.inferredAddress.value.trim();
+  if (!address) {
+    els.inferHint.textContent = "Add or confirm an address before checking commute.";
+    els.inferHint.classList.add("warning");
+    return;
+  }
+
+  state.apartments.push({
+    id: crypto.randomUUID(),
+    name: els.inferredName.value.trim() || address,
+    address,
+    price: 0,
+    url: els.streetEasyUrl.value.trim(),
+    manualMinutes: 0
+  });
+
+  els.streetEasyUrl.value = "";
+  els.streetEasyConfirm.hidden = true;
+  saveState();
+  renderCards();
+  await rankApartments();
+}
+
+function parseStreetEasyUrl(value) {
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    return {
+      name: "",
+      address: "",
+      confident: false,
+      message: "Paste a full StreetEasy URL, then review the inferred address."
+    };
+  }
+
+  if (!url.hostname.endsWith("streeteasy.com")) {
+    return {
+      name: "",
+      address: "",
+      confident: false,
+      message: "This does not look like a StreetEasy link. You can still type the address manually."
+    };
+  }
+
+  const segments = url.pathname.split("/").filter(Boolean);
+  const buildingIndex = segments.indexOf("building");
+  const buildingSlug = buildingIndex >= 0 ? segments[buildingIndex + 1] : "";
+  const unitSlug = buildingIndex >= 0 ? segments[buildingIndex + 2] : "";
+
+  if (!buildingSlug) {
+    return {
+      name: "StreetEasy listing",
+      address: "",
+      confident: false,
+      message: "I could not infer an address from this StreetEasy URL. Type it once, then add it."
+    };
+  }
+
+  const buildingName = titleCaseSlug(buildingSlug);
+  const unitName = unitSlug ? `, Unit ${unitSlug.toUpperCase()}` : "";
+
+  return {
+    name: `${buildingName}${unitName}`,
+    address: `${buildingName}, New York, NY`,
+    confident: true,
+    message: "This is a best-effort guess from the URL. Confirm the exact street suffix, borough, and unit if needed."
+  };
+}
+
+function titleCaseSlug(slug) {
+  return slug
+    .replace(/_/g, "-")
+    .split("-")
+    .filter(Boolean)
+    .map((part) => {
+      if (/^\d+[a-z]?$/i.test(part)) return part.toUpperCase();
+      return part.charAt(0).toUpperCase() + part.slice(1);
+    })
+    .join(" ");
+}
+
+function removeCard(event) {
+  const button = event.target.closest(".remove-card");
+  if (!button) return;
+
+  const destination = button.closest(".destination-card");
+  const apartment = button.closest(".apartment-card");
+  if (destination) {
+    state.destinations = state.destinations.filter((item) => item.id !== destination.dataset.id);
+  }
+  if (apartment) {
+    state.apartments = state.apartments.filter((item) => item.id !== apartment.dataset.id);
+  }
+  saveState();
+  renderCards();
+  renderEmptyResults();
+}
+
+function loadGoogleMaps() {
+  const key = state.apiKey.trim();
+  if (!key) return Promise.resolve(false);
+  if (window.google?.maps && state.mapsLoadedFor === key) return Promise.resolve(true);
+
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector("script[data-google-maps]");
+    if (existing) existing.remove();
+
+    window.initApartmentMaps = () => {
+      state.mapsLoadedFor = key;
+      resolve(true);
+    };
+
+    const script = document.createElement("script");
+    script.dataset.googleMaps = "true";
+    script.async = true;
+    script.defer = true;
+    script.onerror = () => reject(new Error("Google Maps could not load."));
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&callback=initApartmentMaps&v=weekly`;
+    document.head.append(script);
+  });
+}
+
+async function rankApartments() {
+  syncFromDom();
+  const apartments = state.apartments.filter((item) => item.address);
+  const destinations = state.destinations.filter((item) => item.address);
+
+  if (!apartments.length || !destinations.length) {
+    renderEmptyResults("Add at least one apartment and one destination.");
+    return;
+  }
+
+  els.results.innerHTML = '<div class="empty-state">Ranking apartments...</div>';
+
+  try {
+    const canUseMaps = await loadGoogleMaps();
+    const ranked = canUseMaps
+      ? await rankWithGoogle(apartments, destinations)
+      : rankWithManual(apartments, destinations);
+    renderResults(ranked, canUseMaps);
+  } catch (error) {
+    const ranked = rankWithManual(apartments, destinations);
+    renderResults(ranked, false, error.message);
+  }
+}
+
+async function rankWithGoogle(apartments, destinations) {
+  const { DistanceMatrixService, TravelMode, UnitSystem, TrafficModel } = await google.maps.importLibrary("routes");
+  const service = new DistanceMatrixService();
+  const departureTime = nextRushHourDate();
+  const travelMode = TravelMode[state.options.travelMode];
+  const request = {
+    origins: apartments.map((item) => item.address),
+    destinations: destinations.map((item) => item.address),
+    travelMode,
+    unitSystem: UnitSystem.IMPERIAL
+  };
+
+  if (travelMode === TravelMode.TRANSIT) {
+    request.transitOptions = { departureTime };
+  }
+
+  if (travelMode === TravelMode.DRIVING) {
+    request.drivingOptions = {
+      departureTime,
+      trafficModel: TrafficModel.BEST_GUESS
+    };
+  }
+
+  const response = await service.getDistanceMatrix(request);
+  if (!response?.rows?.length) throw new Error("Google Maps returned no commute rows.");
+
+  return apartments
+    .map((apartment, apartmentIndex) => {
+      const commutes = destinations.map((destination, destinationIndex) => {
+        const element = response.rows[apartmentIndex].elements[destinationIndex];
+        const seconds = element?.duration_in_traffic?.value || element?.duration?.value || null;
+        const minutes = seconds ? Math.round(seconds / 60) : null;
+        return {
+          destination,
+          minutes,
+          distance: element?.distance?.text || "",
+          status: element?.status || "UNKNOWN"
+        };
+      });
+      return withScore(apartment, commutes);
+    })
+    .sort((a, b) => a.score - b.score || a.apartment.price - b.apartment.price);
+}
+
+function rankWithManual(apartments, destinations) {
+  return apartments
+    .map((apartment) => {
+      const fallbackMinutes = apartment.manualMinutes || 999;
+      const commutes = destinations.map((destination) => ({
+        destination,
+        minutes: fallbackMinutes,
+        distance: "",
+        status: apartment.manualMinutes ? "MANUAL" : "MISSING"
+      }));
+      return withScore(apartment, commutes);
+    })
+    .sort((a, b) => a.score - b.score || a.apartment.price - b.apartment.price);
+}
+
+function withScore(apartment, commutes) {
+  let weightedTotal = 0;
+  let weightTotal = 0;
+
+  commutes.forEach((commute) => {
+    const weight = commute.destination.weight || 1;
+    weightedTotal += (commute.minutes || 999) * weight;
+    weightTotal += weight;
+  });
+
+  return {
+    apartment,
+    commutes,
+    score: Math.round(weightedTotal / Math.max(1, weightTotal))
+  };
+}
+
+function renderResults(ranked, usedGoogle, warning = "") {
+  const best = ranked[0]?.score;
+  els.bestTime.textContent = Number.isFinite(best) && best < 999 ? `${best}m` : "--";
+
+  const modeName = state.options.travelMode.toLowerCase();
+  const departure = nextRushHourDate();
+  els.resultsMeta.textContent = usedGoogle
+    ? `Sorted by ${modeName} time for ${departure.toLocaleDateString([], { weekday: "long" })} at ${state.options.departTime}.`
+    : "Sorted by manual commute estimate.";
+
+  els.results.innerHTML = "";
+  if (warning) {
+    const warningNode = document.createElement("div");
+    warningNode.className = "empty-state warning";
+    warningNode.textContent = `${warning} Showing manual estimates.`;
+    els.results.append(warningNode);
+  }
+
+  ranked.forEach((item, index) => {
+    const card = document.createElement("article");
+    card.className = "result-card";
+    const url = item.apartment.url || "#";
+    const rent = item.apartment.price ? `$${item.apartment.price.toLocaleString()}` : "Rent TBD";
+    const commutes = item.commutes
+      .map((commute) => {
+        const time = commute.minutes && commute.minutes < 999 ? `${commute.minutes} min` : "Missing";
+        const detail = commute.distance || commute.status.toLowerCase();
+        return `
+          <div class="commute-cell">
+            <strong>${escapeHtml(commute.destination.name || "Destination")}</strong>
+            <span>${time}${detail ? ` · ${escapeHtml(detail)}` : ""}</span>
+          </div>
+        `;
+      })
+      .join("");
+
+    card.innerHTML = `
+      <div class="result-top">
+        <div>
+          <div class="result-title">
+            <a href="${escapeAttribute(url)}" target="_blank" rel="noreferrer">${index + 1}. ${escapeHtml(item.apartment.name || item.apartment.address)}</a>
+            <span class="rent">${rent}</span>
+          </div>
+          <p class="address">${escapeHtml(item.apartment.address)}</p>
+        </div>
+        <div class="score">${item.score < 999 ? `${item.score} min` : "Missing"}</div>
+      </div>
+      <div class="commute-grid">${commutes}</div>
+    `;
+    els.results.append(card);
+  });
+}
+
+function renderEmptyResults(message = "Add apartments, destinations, then rank the list.") {
+  els.bestTime.textContent = "--";
+  els.resultsMeta.textContent = "Sorted by weighted commute time.";
+  els.results.innerHTML = `<div class="empty-state">${escapeHtml(message)}</div>`;
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function escapeAttribute(value) {
+  const text = String(value || "#");
+  if (!/^https?:\/\//i.test(text) && text !== "#") return "#";
+  return escapeHtml(text);
+}
+
+function bindEvents() {
+  document.querySelectorAll(".tab-button").forEach((button) => {
+    button.addEventListener("click", () => {
+      document.querySelectorAll(".tab-button").forEach((item) => item.classList.remove("active"));
+      document.querySelectorAll(".tab-panel").forEach((item) => item.classList.remove("active"));
+      button.classList.add("active");
+      document.querySelector(`#${button.dataset.tab}`).classList.add("active");
+    });
+  });
+
+  document.querySelector("#addDestination").addEventListener("click", addDestination);
+  document.querySelector("#addApartment").addEventListener("click", addApartment);
+  document.querySelector("#inferStreetEasy").addEventListener("click", inferStreetEasyListing);
+  document.querySelector("#confirmStreetEasy").addEventListener("click", confirmStreetEasyListing);
+  document.querySelector("#rankApartments").addEventListener("click", rankApartments);
+  els.destinations.addEventListener("click", removeCard);
+  els.apartments.addEventListener("click", removeCard);
+
+  els.streetEasyUrl.addEventListener("input", () => {
+    if (els.streetEasyConfirm.hidden || !els.streetEasyUrl.value.trim()) return;
+    inferStreetEasyListing();
+  });
+
+  document.addEventListener("input", (event) => {
+    if (event.target.closest(".apartment-card") || event.target.closest(".destination-card")) {
+      syncFromDom();
+    }
+    if (event.target === els.weekday || event.target === els.departTime || event.target === els.travelMode) {
+      syncFromDom();
+    }
+  });
+}
+
+loadState();
+bindEvents();
+renderCards();
+updateApiStatus();
+renderEmptyResults();
