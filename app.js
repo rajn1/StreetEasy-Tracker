@@ -5,7 +5,7 @@ const state = {
     {
       id: crypto.randomUUID(),
       name: "Office",
-      address: "11 Madison Ave, New York, NY",
+      address: "295 Lafayette Street, New York, NY",
       weight: 5
     },
     {
@@ -69,9 +69,24 @@ function loadState() {
     state.destinations = parsed.destinations?.length ? parsed.destinations : state.destinations;
     state.apartments = parsed.apartments?.length ? parsed.apartments : state.apartments;
     state.options = { ...state.options, ...parsed.options };
+    migrateDefaultDestinations();
   } catch {
     localStorage.removeItem(STORAGE_KEY);
   }
+}
+
+function migrateDefaultDestinations() {
+  state.destinations = state.destinations.map((destination) => {
+    if (destination.name === "Office" && destination.address === "11 Madison Ave, New York, NY") {
+      return {
+        ...destination,
+        address: "295 Lafayette Street, New York, NY"
+      };
+    }
+
+    return destination;
+  });
+  saveState();
 }
 
 function saveState() {
