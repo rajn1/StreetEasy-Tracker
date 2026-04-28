@@ -1,3 +1,2 @@
-window.APARTMENT_HUNT_CONFIG = {
-  googleMapsApiKey: "PASTE_YOUR_BROWSER_RESTRICTED_GOOGLE_MAPS_KEY_HERE"
-};
+// This file is no longer used.
+// Use .env.example and the server-side GOOGLE_MAPS_API_KEY instead.

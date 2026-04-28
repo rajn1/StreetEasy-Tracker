@@ -1,31 +1,31 @@
 # StreetEasy Tracker
 
-A small static web app for NYC apartment hunting tools.
+A small Vercel web app for NYC apartment hunting tools.
 
 ## Current tools
 
 - Commute-aware search with tabbed navigation
 - Manual commute ranking without external services
-- Optional Google Maps JavaScript API support for real commute times
+- Server-side Google Routes API support for real commute times
 
 ## Run locally
 
-Serve the folder and open the local URL:
+Install the Vercel CLI if needed, then run the app:
 
 ```sh
-python3 -m http.server 5173
+npm run dev
 ```
 
-Then visit `http://localhost:5173`.
+Then visit the local URL printed by Vercel, usually `http://localhost:3000`.
 
-For Google Maps ranking, create a browser-restricted API key with Maps JavaScript API and Distance Matrix API access enabled.
+For Google Maps ranking, create a server-side API key with Routes API access enabled.
 
-Then create a local config file:
+Then create a local environment file:
 
 ```sh
-cp config.local.example.js config.local.js
+cp .env.example .env
 ```
 
-Edit `config.local.js` and paste your key. That file is ignored by Git, so it will not be committed to GitHub.
+Edit `.env` and paste your key. That file is ignored by Git, so it will not be committed to GitHub.
 
-Important: this keeps the key out of the repository, but browser-side Maps keys are still visible to anyone who can load the webpage. Restrict the key in Google Cloud to your allowed HTTP referrers, such as `http://localhost:5173/*` while developing.
+When deploying to Vercel, add `GOOGLE_MAPS_API_KEY` as a project environment variable. The browser calls `/api/commutes`; the Google key stays on the serverless function.

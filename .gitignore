@@ -1,1 +1,4 @@
 config.local.js
+.env
+.vercel
+node_modules

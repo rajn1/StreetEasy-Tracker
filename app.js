@@ -1,9 +1,6 @@
 const STORAGE_KEY = "nyc-apartment-hunt-v1";
-const LOCAL_CONFIG = window.APARTMENT_HUNT_CONFIG || {};
 
 const state = {
-  apiKey: LOCAL_CONFIG.googleMapsApiKey || "",
-  mapsLoadedFor: "",
   destinations: [
     {
       id: crypto.randomUUID(),
@@ -89,12 +86,9 @@ function saveState() {
 }
 
 function updateApiStatus() {
-  const hasKey = Boolean(state.apiKey.trim());
-  els.apiStatus.textContent = hasKey ? "Google Maps ready" : "Manual mode";
-  els.apiStatus.classList.toggle("ready", hasKey);
-  els.apiHint.textContent = hasKey
-    ? "Using your local Google Maps key from config.local.js."
-    : "Create config.local.js from config.local.example.js to enable real commute times.";
+  els.apiStatus.textContent = "Backend mode";
+  els.apiStatus.classList.add("ready");
+  els.apiHint.textContent = "Real commute checks run through /api/commutes using GOOGLE_MAPS_API_KEY on the server.";
 }
 
 function nextRushHourDate() {
@@ -309,30 +303,6 @@ function removeCard(event) {
   renderEmptyResults();
 }
 
-function loadGoogleMaps() {
-  const key = state.apiKey.trim();
-  if (!key) return Promise.resolve(false);
-  if (window.google?.maps && state.mapsLoadedFor === key) return Promise.resolve(true);
-
-  return new Promise((resolve, reject) => {
-    const existing = document.querySelector("script[data-google-maps]");
-    if (existing) existing.remove();
-
-    window.initApartmentMaps = () => {
-      state.mapsLoadedFor = key;
-      resolve(true);
-    };
-
-    const script = document.createElement("script");
-    script.dataset.googleMaps = "true";
-    script.async = true;
-    script.defer = true;
-    script.onerror = () => reject(new Error("Google Maps could not load."));
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&callback=initApartmentMaps&v=weekly`;
-    document.head.append(script);
-  });
-}
-
 async function rankApartments() {
   syncFromDom();
   const apartments = state.apartments.filter((item) => item.address);
@@ -346,54 +316,46 @@ async function rankApartments() {
   els.results.innerHTML = '<div class="empty-state">Ranking apartments...</div>';
 
   try {
-    const canUseMaps = await loadGoogleMaps();
-    const ranked = canUseMaps
-      ? await rankWithGoogle(apartments, destinations)
-      : rankWithManual(apartments, destinations);
-    renderResults(ranked, canUseMaps);
+    const ranked = await rankWithBackend(apartments, destinations);
+    renderResults(ranked, true);
   } catch (error) {
     const ranked = rankWithManual(apartments, destinations);
     renderResults(ranked, false, error.message);
   }
 }
 
-async function rankWithGoogle(apartments, destinations) {
-  const { DistanceMatrixService, TravelMode, UnitSystem, TrafficModel } = await google.maps.importLibrary("routes");
-  const service = new DistanceMatrixService();
-  const departureTime = nextRushHourDate();
-  const travelMode = TravelMode[state.options.travelMode];
-  const request = {
-    origins: apartments.map((item) => item.address),
-    destinations: destinations.map((item) => item.address),
-    travelMode,
-    unitSystem: UnitSystem.IMPERIAL
-  };
+async function rankWithBackend(apartments, destinations) {
+  const response = await fetch("/api/commutes", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      apartments,
+      destinations,
+      options: {
+        travelMode: state.options.travelMode,
+        departureTime: nextRushHourDate().toISOString()
+      }
+    })
+  });
 
-  if (travelMode === TravelMode.TRANSIT) {
-    request.transitOptions = { departureTime };
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.error || "Commute API request failed.");
   }
-
-  if (travelMode === TravelMode.DRIVING) {
-    request.drivingOptions = {
-      departureTime,
-      trafficModel: TrafficModel.BEST_GUESS
-    };
-  }
-
-  const response = await service.getDistanceMatrix(request);
-  if (!response?.rows?.length) throw new Error("Google Maps returned no commute rows.");
 
   return apartments
     .map((apartment, apartmentIndex) => {
       const commutes = destinations.map((destination, destinationIndex) => {
-        const element = response.rows[apartmentIndex].elements[destinationIndex];
-        const seconds = element?.duration_in_traffic?.value || element?.duration?.value || null;
-        const minutes = seconds ? Math.round(seconds / 60) : null;
+        const element = data.elements.find(
+          (item) => item.originIndex === apartmentIndex && item.destinationIndex === destinationIndex
+        );
         return {
           destination,
-          minutes,
-          distance: element?.distance?.text || "",
-          status: element?.status || "UNKNOWN"
+          minutes: element?.minutes || null,
+          distance: element?.distance || "",
+          status: element?.condition || element?.status || "UNKNOWN"
         };
       });
       return withScore(apartment, commutes);
