@@ -27,7 +27,6 @@ const state = {
 };
 
 const els = {
-  apiStatus: document.querySelector("#apiStatus"),
   apiHint: document.querySelector("#apiHint"),
   weekday: document.querySelector("#weekday"),
   departTime: document.querySelector("#departTime"),
@@ -73,8 +72,6 @@ function saveState() {
 }
 
 function updateApiStatus() {
-  els.apiStatus.textContent = "Backend mode";
-  els.apiStatus.classList.add("ready");
   els.apiHint.textContent = "Real commute checks run through /api/commutes using GOOGLE_MAPS_API_KEY on the server.";
 }
 
