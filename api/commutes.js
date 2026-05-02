@@ -1,4 +1,5 @@
-const GOOGLE_ROUTES_URL = "https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix";
+const GOOGLE_MATRIX_URL = "https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix";
+const GOOGLE_ROUTES_URL = "https://routes.googleapis.com/directions/v2:computeRoutes";
 
 const MODE_MAP = {
   TRANSIT: "TRANSIT",
@@ -6,6 +7,8 @@ const MODE_MAP = {
   WALKING: "WALK",
   BICYCLING: "BICYCLE"
 };
+
+const DEFAULT_MODES = ["TRANSIT", "WALKING", "BICYCLING"];
 
 export default async function handler(request, response) {
   if (request.method !== "POST") {
@@ -35,38 +38,109 @@ export default async function handler(request, response) {
       return response.status(400).json({ error: "This app caps commute checks at 100 route elements per request." });
     }
 
-    const googleResponse = await fetch(GOOGLE_ROUTES_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Goog-Api-Key": apiKey,
-        "X-Goog-FieldMask": "originIndex,destinationIndex,duration,distanceMeters,condition,status,localizedValues"
-      },
-      body: JSON.stringify(buildGoogleRequest(apartments, destinations, options))
-    });
-
-    const rawText = await googleResponse.text();
-    const data = parseGoogleResponse(rawText);
-    if (!googleResponse.ok) {
-      return response.status(googleResponse.status).json({
-        error: formatGoogleError(googleResponse.status, data, rawText),
-        googleStatus: data?.error?.status || data?.error?.code || googleResponse.status
-      });
-    }
-
-    if (!Array.isArray(data)) {
-      return response.status(502).json({
-        error: "Google Routes returned an unexpected response format.",
-        googleStatus: "UNEXPECTED_RESPONSE"
-      });
-    }
+    const matrixGroups = await Promise.all(
+      DEFAULT_MODES.map(async (mode) => ({
+        mode,
+        elements: await fetchMatrix(apiKey, apartments, destinations, options, mode)
+      }))
+    );
+    const transitDetails = await fetchTransitDetails(apiKey, apartments, destinations, options);
 
     return response.status(200).json({
-      elements: data.map(normalizeMatrixElement)
+      elements: matrixGroups.flatMap((group) =>
+        group.elements.map((element) => ({
+          ...normalizeMatrixElement(element),
+          mode: group.mode,
+          transitSummary:
+            group.mode === "TRANSIT"
+              ? transitDetails[routeKey(element.originIndex, element.destinationIndex)] || null
+              : null
+        }))
+      )
     });
   } catch (error) {
     return response.status(500).json({ error: error.message || "Commute calculation failed." });
   }
+}
+
+async function fetchMatrix(apiKey, apartments, destinations, options, mode) {
+  const googleResponse = await fetch(GOOGLE_MATRIX_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Goog-Api-Key": apiKey,
+      "X-Goog-FieldMask": "originIndex,destinationIndex,duration,distanceMeters,condition,status,localizedValues"
+    },
+    body: JSON.stringify(buildMatrixRequest(apartments, destinations, options, mode))
+  });
+
+  const rawText = await googleResponse.text();
+  const data = parseGoogleResponse(rawText);
+  if (!googleResponse.ok) {
+    throw new Error(formatGoogleError(googleResponse.status, data, rawText));
+  }
+
+  if (!Array.isArray(data)) {
+    throw new Error("Google Routes returned an unexpected matrix response format.");
+  }
+
+  return data;
+}
+
+async function fetchTransitDetails(apiKey, apartments, destinations, options) {
+  const details = {};
+  const pairs = apartments.flatMap((apartment, originIndex) =>
+    destinations.map((destination, destinationIndex) => ({ apartment, destination, originIndex, destinationIndex }))
+  );
+
+  await Promise.all(
+    pairs.map(async (pair) => {
+      const summary = await fetchTransitRoute(apiKey, pair.apartment.address, pair.destination.address, options);
+      details[routeKey(pair.originIndex, pair.destinationIndex)] = summary;
+    })
+  );
+
+  return details;
+}
+
+async function fetchTransitRoute(apiKey, origin, destination, options) {
+  const googleResponse = await fetch(GOOGLE_ROUTES_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Goog-Api-Key": apiKey,
+      "X-Goog-FieldMask":
+        "routes.duration,routes.distanceMeters,routes.legs.steps.travelMode,routes.legs.steps.transitDetails"
+    },
+    body: JSON.stringify({
+      origin: { address: origin },
+      destination: { address: destination },
+      travelMode: "TRANSIT",
+      units: "IMPERIAL",
+      languageCode: "en-US",
+      regionCode: "US",
+      ...(options.departureTime ? { departureTime: options.departureTime } : {})
+    })
+  });
+
+  const rawText = await googleResponse.text();
+  const data = parseGoogleResponse(rawText);
+  if (!googleResponse.ok) return { lines: [], warning: formatGoogleError(googleResponse.status, data, rawText) };
+
+  const route = data?.routes?.[0];
+  if (!route) return { lines: [] };
+
+  const lines = route.legs
+    ?.flatMap((leg) => leg.steps || [])
+    .filter((step) => step.travelMode === "TRANSIT" && step.transitDetails)
+    .map((step) => normalizeTransitStep(step.transitDetails))
+    .filter(Boolean);
+
+  return {
+    minutes: durationToMinutes(route.duration),
+    distance: metersToMiles(route.distanceMeters),
+    lines: lines || []
+  };
 }
 
 function parseGoogleResponse(rawText) {
@@ -100,8 +174,8 @@ function cleanAddressItems(items, fallbackName) {
     .filter((item) => item.address);
 }
 
-function buildGoogleRequest(apartments, destinations, options) {
-  const travelMode = MODE_MAP[options.travelMode] || "TRANSIT";
+function buildMatrixRequest(apartments, destinations, options, mode) {
+  const travelMode = MODE_MAP[mode] || "TRANSIT";
   const request = {
     origins: apartments.map((item) => ({ waypoint: { address: item.address } })),
     destinations: destinations.map((item) => ({ waypoint: { address: item.address } })),
@@ -111,7 +185,7 @@ function buildGoogleRequest(apartments, destinations, options) {
     regionCode: "US"
   };
 
-  if (options.departureTime) {
+  if (options.departureTime && travelMode === "TRANSIT") {
     request.departureTime = options.departureTime;
   }
 
@@ -132,6 +206,28 @@ function normalizeMatrixElement(element) {
     minutes: durationToMinutes(element.duration),
     distance: element.localizedValues?.distance?.text || metersToMiles(element.distanceMeters)
   };
+}
+
+function normalizeTransitStep(details) {
+  const line = details.transitLine || {};
+  const vehicle = line.vehicle || {};
+  const stopDetails = details.stopDetails || {};
+  const name = line.nameShort || line.name;
+  if (!name) return null;
+
+  return {
+    name,
+    fullName: line.name || "",
+    vehicle: vehicle.type || vehicle.name?.text || "TRANSIT",
+    headsign: details.headsign || "",
+    stops: details.stopCount || 0,
+    departureStop: stopDetails.departureStop?.name || "",
+    arrivalStop: stopDetails.arrivalStop?.name || ""
+  };
+}
+
+function routeKey(originIndex, destinationIndex) {
+  return `${originIndex}:${destinationIndex}`;
 }
 
 function durationToMinutes(value) {

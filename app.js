@@ -22,8 +22,7 @@ const state = {
   ],
   options: {
     weekday: "2",
-    departTime: "08:30",
-    travelMode: "TRANSIT"
+    departTime: "08:30"
   }
 };
 
@@ -32,7 +31,6 @@ const els = {
   apiHint: document.querySelector("#apiHint"),
   weekday: document.querySelector("#weekday"),
   departTime: document.querySelector("#departTime"),
-  travelMode: document.querySelector("#travelMode"),
   streetEasyUrl: document.querySelector("#streetEasyUrl"),
   streetEasyConfirm: document.querySelector("#streetEasyConfirm"),
   inferredAddress: document.querySelector("#inferredAddress"),
@@ -96,7 +94,6 @@ function nextRushHourDate() {
 function renderCards() {
   els.weekday.value = state.options.weekday;
   els.departTime.value = state.options.departTime;
-  els.travelMode.value = state.options.travelMode;
 
   els.destinations.innerHTML = "";
   state.destinations.forEach((destination) => {
@@ -230,7 +227,6 @@ function updateCounts() {
 function syncFromDom() {
   state.options.weekday = els.weekday.value;
   state.options.departTime = els.departTime.value;
-  state.options.travelMode = els.travelMode.value;
 
   state.destinations = [...els.destinations.querySelectorAll(".destination-card")].map((card) => ({
     id: card.dataset.id,
@@ -372,6 +368,14 @@ function titleCaseSlug(slug) {
     .join(" ");
 }
 
+function titleCase(value) {
+  return value
+    .split(" ")
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
 function removeCard(event) {
   const button = event.target.closest(".remove-card");
   if (!button) return;
@@ -420,7 +424,6 @@ async function rankWithBackend(apartments, destinations) {
       apartments,
       destinations,
       options: {
-        travelMode: state.options.travelMode,
         departureTime: nextRushHourDate().toISOString()
       }
     })
@@ -434,19 +437,35 @@ async function rankWithBackend(apartments, destinations) {
   return apartments
     .map((apartment, apartmentIndex) => {
       const commutes = destinations.map((destination, destinationIndex) => {
-        const element = data.elements.find(
+        const elements = data.elements.filter(
           (item) => item.originIndex === apartmentIndex && item.destinationIndex === destinationIndex
         );
+        const byMode = Object.fromEntries(elements.map((item) => [item.mode, item]));
+        const primary = byMode.TRANSIT || byMode.WALKING || byMode.BICYCLING || {};
         return {
           destination,
-          minutes: element?.minutes || null,
-          distance: element?.distance || "",
-          status: element?.condition || element?.status || "UNKNOWN"
+          minutes: primary.minutes || null,
+          distance: primary.distance || "",
+          status: primary.condition || primary.status || "UNKNOWN",
+          modes: {
+            transit: normalizeModeCommute(byMode.TRANSIT),
+            walking: normalizeModeCommute(byMode.WALKING),
+            bicycling: normalizeModeCommute(byMode.BICYCLING)
+          },
+          transitSummary: byMode.TRANSIT?.transitSummary || null
         };
       });
       return withScore(apartment, commutes);
     })
     .sort((a, b) => a.score - b.score || a.apartment.price - b.apartment.price);
+}
+
+function normalizeModeCommute(element) {
+  return {
+    minutes: element?.minutes || null,
+    distance: element?.distance || "",
+    status: element?.condition || element?.status || "UNKNOWN"
+  };
 }
 
 function rankWithManual(apartments, destinations) {
@@ -485,10 +504,9 @@ function renderResults(ranked, usedGoogle, warning = "") {
   const best = ranked[0]?.score;
   els.bestTime.textContent = Number.isFinite(best) && best < 999 ? `${best}m` : "--";
 
-  const modeName = state.options.travelMode.toLowerCase();
   const departure = nextRushHourDate();
   els.resultsMeta.textContent = usedGoogle
-    ? `Sorted by ${modeName} time for ${departure.toLocaleDateString([], { weekday: "long" })} at ${state.options.departTime}.`
+    ? `Sorted by weighted transit time for ${departure.toLocaleDateString([], { weekday: "long" })} at ${state.options.departTime}; walking and bike are shown for comparison.`
     : "Sorted by manual commute estimate.";
 
   els.results.innerHTML = "";
@@ -506,7 +524,21 @@ function renderResults(ranked, usedGoogle, warning = "") {
     const rent = item.apartment.price ? `$${item.apartment.price.toLocaleString()}` : "Rent TBD";
     const commutes = item.commutes
       .map((commute) => {
-        const time = commute.minutes && commute.minutes < 999 ? `${commute.minutes} min` : "Missing";
+        if (commute.modes) {
+          return `
+            <div class="commute-cell">
+              <strong>${escapeHtml(commute.destination.name || "Destination")}</strong>
+              <div class="mode-row">
+                ${renderModePill("Transit", commute.modes.transit)}
+                ${renderModePill("Walk", commute.modes.walking)}
+                ${renderModePill("Bike", commute.modes.bicycling)}
+              </div>
+              ${renderTransitLines(commute.transitSummary)}
+            </div>
+          `;
+        }
+
+        const time = formatMinutes(commute.minutes);
         const detail = commute.distance || commute.status.toLowerCase();
         return `
           <div class="commute-cell">
@@ -532,6 +564,33 @@ function renderResults(ranked, usedGoogle, warning = "") {
     `;
     els.results.append(card);
   });
+}
+
+function renderModePill(label, mode) {
+  const time = formatMinutes(mode?.minutes);
+  const distance = mode?.distance ? ` · ${escapeHtml(mode.distance)}` : "";
+  return `<span class="mode-pill"><b>${label}</b> ${time}${distance}</span>`;
+}
+
+function renderTransitLines(summary) {
+  if (!summary?.lines?.length) {
+    return '<p class="transit-lines">Transit route details unavailable.</p>';
+  }
+
+  const lines = summary.lines
+    .map((line) => {
+      const vehicle = titleCase(line.vehicle.replaceAll("_", " ").toLowerCase());
+      const stops = line.stops ? ` · ${line.stops} stops` : "";
+      const headsign = line.headsign ? ` toward ${escapeHtml(line.headsign)}` : "";
+      return `<span class="line-pill">${escapeHtml(line.name)}</span><span>${vehicle}${headsign}${stops}</span>`;
+    })
+    .join("");
+
+  return `<div class="transit-lines">${lines}</div>`;
+}
+
+function formatMinutes(value) {
+  return value && value < 999 ? `${value} min` : "Missing";
 }
 
 function renderEmptyResults(message = "Add apartments, destinations, then rank the list.") {
@@ -584,7 +643,7 @@ function bindEvents() {
     if (event.target.closest(".apartment-card") || event.target.closest(".destination-card")) {
       syncFromDom();
     }
-    if (event.target === els.weekday || event.target === els.departTime || event.target === els.travelMode) {
+    if (event.target === els.weekday || event.target === els.departTime) {
       syncFromDom();
     }
   });
