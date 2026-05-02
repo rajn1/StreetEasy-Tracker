@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Apartment Hunt Login</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="login-shell">
+      <form class="login-panel" id="loginForm">
+        <p class="eyebrow">NYC Apartment Hunt</p>
+        <h1>Enter password</h1>
+        <label>
+          Password
+          <input id="password" type="password" autocomplete="current-password" autofocus>
+        </label>
+        <p class="hint warning" id="loginError" hidden></p>
+        <button class="primary" type="submit">Log In</button>
+      </form>
+    </main>
+
+    <script>
+      const form = document.querySelector("#loginForm");
+      const password = document.querySelector("#password");
+      const error = document.querySelector("#loginError");
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        error.hidden = true;
+
+        const response = await fetch("/api/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password: password.value })
+        });
+
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          error.textContent = data.error || "Login failed.";
+          error.hidden = false;
+          return;
+        }
+
+        const next = new URLSearchParams(window.location.search).get("next") || "/";
+        window.location.assign(next);
+      });
+    </script>
+  </body>
+</html>

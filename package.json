@@ -5,6 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vercel dev",
-    "check": "node --check app.js && node --check api/commutes.js"
+    "check": "node --check app.js && node --check api/commutes.js && node --check api/login.js && node --check auth.js && node --check middleware.js"
+  },
+  "dependencies": {
+    "@vercel/functions": "latest"
   }
 }

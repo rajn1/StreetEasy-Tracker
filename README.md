@@ -26,6 +26,12 @@ Then create a local environment file:
 cp .env.example .env
 ```
 
-Edit `.env` and paste your key. That file is ignored by Git, so it will not be committed to GitHub.
+Edit `.env` and paste your key. Also set `APP_PASSWORD` so the deployed site requires a password. That file is ignored by Git, so it will not be committed to GitHub.
 
-When deploying to Vercel, add `GOOGLE_MAPS_API_KEY` as a project environment variable. The browser calls `/api/commutes`; the Google key stays on the serverless function.
+When deploying to Vercel, add these project environment variables:
+
+- `GOOGLE_MAPS_API_KEY`
+- `APP_PASSWORD`
+- `APARTMENT_AUTH_SECRET`
+
+The browser calls `/api/commutes`; the Google key stays on the serverless function. The password gate is enforced by Vercel Routing Middleware before the page or API routes load.
