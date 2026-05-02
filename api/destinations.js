@@ -2,7 +2,7 @@ import { get } from "@vercel/edge-config";
 import { randomUUID } from "node:crypto";
 
 const VERCEL_API_URL = "https://api.vercel.com/v1/edge-config";
-const DESTINATIONS_KEY = "apartment-hunt:destinations";
+const DESTINATIONS_KEY = "apartment_hunt_destinations";
 
 export default async function handler(request, response) {
   try {
@@ -63,7 +63,16 @@ async function saveDestinations(config, destinations) {
 
   if (!response.ok) {
     const message = await response.text();
-    throw new Error(`Edge Config save failed: ${message.slice(0, 220)}`);
+    throw new Error(`Edge Config save failed: ${formatVercelApiError(message)}`);
+  }
+}
+
+function formatVercelApiError(message) {
+  try {
+    const data = JSON.parse(message);
+    return data?.error?.message || message.slice(0, 220);
+  } catch {
+    return message.slice(0, 220);
   }
 }
 
