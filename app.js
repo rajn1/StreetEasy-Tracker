@@ -39,6 +39,7 @@ const els = {
   inferredName: document.querySelector("#inferredName"),
   inferHint: document.querySelector("#inferHint"),
   destinationStatus: document.querySelector("#destinationStatus"),
+  apartmentStatus: document.querySelector("#apartmentStatus"),
   destinations: document.querySelector("#destinations"),
   apartments: document.querySelector("#apartments"),
   results: document.querySelector("#results"),
@@ -170,6 +171,55 @@ async function saveBackendDestinations() {
 function setDestinationStatus(message, isWarning = false) {
   els.destinationStatus.textContent = message;
   els.destinationStatus.classList.toggle("warning", isWarning);
+}
+
+async function loadBackendApartments() {
+  try {
+    const response = await fetch("/api/apartments");
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Could not load backend apartments.");
+
+    if (data.apartments.length) {
+      state.apartments = data.apartments;
+      saveState();
+      renderCards();
+      setApartmentStatus("Loaded saved apartments from Vercel storage.");
+      return;
+    }
+
+    setApartmentStatus("No saved apartments yet. Add apartments, then save them.");
+  } catch (error) {
+    setApartmentStatus(`${error.message} Using browser-local apartments.`, true);
+  }
+}
+
+async function saveBackendApartments() {
+  syncFromDom();
+  setApartmentStatus("Saving apartments...");
+
+  try {
+    const response = await fetch("/api/apartments", {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ apartments: state.apartments })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Could not save backend apartments.");
+
+    state.apartments = data.apartments;
+    saveState();
+    renderCards();
+    setApartmentStatus("Saved apartments to Vercel storage.");
+  } catch (error) {
+    setApartmentStatus(error.message, true);
+  }
+}
+
+function setApartmentStatus(message, isWarning = false) {
+  els.apartmentStatus.textContent = message;
+  els.apartmentStatus.classList.toggle("warning", isWarning);
 }
 
 function updateCounts() {
@@ -518,6 +568,7 @@ function bindEvents() {
   document.querySelector("#addDestination").addEventListener("click", addDestination);
   document.querySelector("#saveDestinations").addEventListener("click", saveBackendDestinations);
   document.querySelector("#addApartment").addEventListener("click", addApartment);
+  document.querySelector("#saveApartments").addEventListener("click", saveBackendApartments);
   document.querySelector("#inferStreetEasy").addEventListener("click", inferStreetEasyListing);
   document.querySelector("#confirmStreetEasy").addEventListener("click", confirmStreetEasyListing);
   document.querySelector("#rankApartments").addEventListener("click", rankApartments);
@@ -545,3 +596,4 @@ renderCards();
 updateApiStatus();
 renderEmptyResults();
 loadBackendDestinations();
+loadBackendApartments();

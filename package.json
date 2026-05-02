@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vercel dev",
-    "check": "node --check app.js && node --check api/commutes.js && node --check api/destinations.js && node --check api/login.js && node --check auth.js && node --check middleware.js"
+    "check": "node --check app.js && node --check api/apartments.js && node --check api/commutes.js && node --check api/destinations.js && node --check api/login.js && node --check api/storage.js && node --check auth.js && node --check middleware.js"
   },
   "dependencies": {
     "@vercel/edge-config": "latest",
