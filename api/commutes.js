@@ -45,10 +45,19 @@ export default async function handler(request, response) {
       body: JSON.stringify(buildGoogleRequest(apartments, destinations, options))
     });
 
-    const data = await googleResponse.json().catch(() => null);
+    const rawText = await googleResponse.text();
+    const data = parseGoogleResponse(rawText);
     if (!googleResponse.ok) {
       return response.status(googleResponse.status).json({
-        error: data?.error?.message || "Google Routes request failed."
+        error: formatGoogleError(googleResponse.status, data, rawText),
+        googleStatus: data?.error?.status || data?.error?.code || googleResponse.status
+      });
+    }
+
+    if (!Array.isArray(data)) {
+      return response.status(502).json({
+        error: "Google Routes returned an unexpected response format.",
+        googleStatus: "UNEXPECTED_RESPONSE"
       });
     }
 
@@ -58,6 +67,25 @@ export default async function handler(request, response) {
   } catch (error) {
     return response.status(500).json({ error: error.message || "Commute calculation failed." });
   }
+}
+
+function parseGoogleResponse(rawText) {
+  if (!rawText) return null;
+
+  try {
+    return JSON.parse(rawText);
+  } catch {
+    return null;
+  }
+}
+
+function formatGoogleError(status, data, rawText) {
+  const message = data?.error?.message;
+  const googleStatus = data?.error?.status || data?.error?.code;
+  if (message && googleStatus) return `Google Routes ${status} ${googleStatus}: ${message}`;
+  if (message) return `Google Routes ${status}: ${message}`;
+  if (rawText) return `Google Routes ${status}: ${rawText.slice(0, 220)}`;
+  return `Google Routes ${status}: request failed.`;
 }
 
 function cleanAddressItems(items, fallbackName) {

@@ -357,7 +357,7 @@ async function rankWithBackend(apartments, destinations) {
 
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(data.error || "Commute API request failed.");
+    throw new Error(data.error || `Commute API request failed with status ${response.status}.`);
   }
 
   return apartments
