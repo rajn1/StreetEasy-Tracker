@@ -33,5 +33,11 @@ When deploying to Vercel, add these project environment variables:
 - `GOOGLE_MAPS_API_KEY`
 - `APP_PASSWORD`
 - `APARTMENT_AUTH_SECRET`
+- `EDGE_CONFIG`
+- `EDGE_CONFIG_ID`
+- `VERCEL_API_TOKEN`
+- `VERCEL_TEAM_ID` if your project is owned by a team
 
 The browser calls `/api/commutes`; the Google key stays on the serverless function. The password gate is enforced by Vercel Routing Middleware before the page or API routes load.
+
+Destinations are stored universally in Vercel Edge Config through `/api/destinations`. Attach Edge Config to the project so Vercel injects `EDGE_CONFIG`. Saving from the app also needs a Vercel API token with access to update that Edge Config.

@@ -1,20 +1,7 @@
 const STORAGE_KEY = "nyc-apartment-hunt-v1";
 
 const state = {
-  destinations: [
-    {
-      id: crypto.randomUUID(),
-      name: "Office",
-      address: "295 Lafayette Street, New York, NY",
-      weight: 5
-    },
-    {
-      id: crypto.randomUUID(),
-      name: "Gym",
-      address: "Union Square, New York, NY",
-      weight: 2
-    }
-  ],
+  destinations: [],
   apartments: [
     {
       id: crypto.randomUUID(),
@@ -51,6 +38,7 @@ const els = {
   inferredAddress: document.querySelector("#inferredAddress"),
   inferredName: document.querySelector("#inferredName"),
   inferHint: document.querySelector("#inferHint"),
+  destinationStatus: document.querySelector("#destinationStatus"),
   destinations: document.querySelector("#destinations"),
   apartments: document.querySelector("#apartments"),
   results: document.querySelector("#results"),
@@ -69,24 +57,9 @@ function loadState() {
     state.destinations = parsed.destinations?.length ? parsed.destinations : state.destinations;
     state.apartments = parsed.apartments?.length ? parsed.apartments : state.apartments;
     state.options = { ...state.options, ...parsed.options };
-    migrateDefaultDestinations();
   } catch {
     localStorage.removeItem(STORAGE_KEY);
   }
-}
-
-function migrateDefaultDestinations() {
-  state.destinations = state.destinations.map((destination) => {
-    if (destination.name === "Office" && destination.address === "11 Madison Ave, New York, NY") {
-      return {
-        ...destination,
-        address: "295 Lafayette Street, New York, NY"
-      };
-    }
-
-    return destination;
-  });
-  saveState();
 }
 
 function saveState() {
@@ -149,6 +122,54 @@ function renderCards() {
   });
 
   updateCounts();
+}
+
+async function loadBackendDestinations() {
+  try {
+    const response = await fetch("/api/destinations");
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Could not load backend destinations.");
+
+    state.destinations = data.destinations;
+    saveState();
+    renderCards();
+    setDestinationStatus(
+      state.destinations.length
+        ? "Loaded saved destinations from Vercel storage."
+        : "No saved destinations yet. Add destinations, then save them."
+    );
+  } catch (error) {
+    setDestinationStatus(`${error.message} Using browser-local destinations.`, true);
+  }
+}
+
+async function saveBackendDestinations() {
+  syncFromDom();
+  setDestinationStatus("Saving destinations...");
+
+  try {
+    const response = await fetch("/api/destinations", {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ destinations: state.destinations })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Could not save backend destinations.");
+
+    state.destinations = data.destinations;
+    saveState();
+    renderCards();
+    setDestinationStatus("Saved destinations to Vercel storage.");
+  } catch (error) {
+    setDestinationStatus(error.message, true);
+  }
+}
+
+function setDestinationStatus(message, isWarning = false) {
+  els.destinationStatus.textContent = message;
+  els.destinationStatus.classList.toggle("warning", isWarning);
 }
 
 function updateCounts() {
@@ -495,6 +516,7 @@ function bindEvents() {
   });
 
   document.querySelector("#addDestination").addEventListener("click", addDestination);
+  document.querySelector("#saveDestinations").addEventListener("click", saveBackendDestinations);
   document.querySelector("#addApartment").addEventListener("click", addApartment);
   document.querySelector("#inferStreetEasy").addEventListener("click", inferStreetEasyListing);
   document.querySelector("#confirmStreetEasy").addEventListener("click", confirmStreetEasyListing);
@@ -522,3 +544,4 @@ bindEvents();
 renderCards();
 updateApiStatus();
 renderEmptyResults();
+loadBackendDestinations();

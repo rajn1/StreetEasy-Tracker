@@ -215,6 +215,13 @@ h2 {
   gap: 10px;
 }
 
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .inline-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
