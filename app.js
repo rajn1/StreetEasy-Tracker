@@ -2,24 +2,7 @@ const STORAGE_KEY = "nyc-apartment-hunt-v1";
 
 const state = {
   destinations: [],
-  apartments: [
-    {
-      id: crypto.randomUUID(),
-      name: "Sample East Village",
-      address: "100 Avenue A, New York, NY",
-      price: 4200,
-      url: "https://streeteasy.com/",
-      manualMinutes: 24
-    },
-    {
-      id: crypto.randomUUID(),
-      name: "Sample Prospect Heights",
-      address: "550 Vanderbilt Ave, Brooklyn, NY",
-      price: 3900,
-      url: "https://streeteasy.com/",
-      manualMinutes: 38
-    }
-  ],
+  apartments: [],
   options: {
     weekday: "2",
     departTime: "08:30"
@@ -121,7 +104,7 @@ function renderCards() {
 
 async function loadBackendDestinations() {
   try {
-    const response = await fetch("/api/destinations");
+    const response = await fetch("/api/destinations", { cache: "no-store" });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || "Could not load backend destinations.");
 
@@ -169,19 +152,18 @@ function setDestinationStatus(message, isWarning = false) {
 
 async function loadBackendApartments() {
   try {
-    const response = await fetch("/api/apartments");
+    const response = await fetch("/api/apartments", { cache: "no-store" });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || "Could not load backend apartments.");
 
-    if (data.apartments.length) {
-      state.apartments = data.apartments;
-      saveState();
-      renderCards();
-      setApartmentStatus("Loaded saved apartments from Vercel storage.");
-      return;
-    }
-
-    setApartmentStatus("No saved apartments yet. Add apartments, then save them.");
+    state.apartments = data.apartments;
+    saveState();
+    renderCards();
+    setApartmentStatus(
+      state.apartments.length
+        ? "Loaded saved apartments from Vercel storage."
+        : "No saved apartments yet. Add apartments, then save them."
+    );
   } catch (error) {
     setApartmentStatus(`${error.message} Using browser-local apartments.`, true);
   }
@@ -303,6 +285,7 @@ async function confirmStreetEasyListing() {
   els.streetEasyConfirm.hidden = true;
   saveState();
   renderCards();
+  await saveBackendApartments();
   await rankApartments();
 }
 

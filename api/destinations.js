@@ -8,6 +8,7 @@ export default async function handler(request, response) {
   try {
     if (request.method === "GET") {
       const destinations = await get(DESTINATIONS_KEY);
+      response.setHeader("Cache-Control", "no-store");
       return response.status(200).json({ destinations: Array.isArray(destinations) ? destinations : [] });
     }
 
